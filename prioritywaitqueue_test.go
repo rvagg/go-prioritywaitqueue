@@ -61,15 +61,15 @@ func TestPriorityWaitQueue(t *testing.T) {
 			// blocking beyond when we add 5 more and expect them all to be run in
 			// proper order
 			name:     "batched start",
-			sleeps:   []int{00, 20, 20, 20, 20, 100, 100, 100, 100, 100},
-			works:    []int{50, 10, 10, 10, 50, 10, 10, 10, 10, 10},
+			sleeps:   []int{00, 20, 20, 20, 20, 150, 150, 150, 150, 150},
+			works:    []int{50, 10, 10, 10, 100, 10, 10, 10, 10, 10},
 			expected: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
 		},
 		{
 			// same as previous but with different batches
 			name:     "batched start reverse",
-			sleeps:   []int{00, 100, 100, 100, 100, 100, 20, 20, 20, 20},
-			works:    []int{50, 10, 10, 10, 10, 10, 10, 10, 10, 50},
+			sleeps:   []int{00, 150, 150, 150, 150, 150, 20, 20, 20, 20},
+			works:    []int{50, 10, 10, 10, 10, 10, 10, 10, 10, 100},
 			expected: []int{0, 6, 7, 8, 9, 1, 2, 3, 4, 5},
 		},
 	}
