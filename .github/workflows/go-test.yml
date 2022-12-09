@@ -32,8 +32,10 @@ jobs:
         #   subsequent 'shell: bash' steps will use msys2 instead of gitbash
         run: echo "C:/msys64/usr/bin" >> $GITHUB_PATH
       - name: Run tests
+        shell: bash
         run: go test -v -shuffle=on ./...
       - name: Run tests (32 bit)
+        shell: bash
         if: ${{ matrix.os != 'macos' }} # can't run 32 bit tests on OSX.
         env:
           GOARCH: 386
@@ -41,5 +43,6 @@ jobs:
           export "PATH=${{ env.PATH_386 }}:$PATH"
           go test -v -shuffle=on ./...
       - name: Run tests with race detector
+        shell: bash
         if: ${{ matrix.os == 'ubuntu' }} # speed things up. Windows and OSX VMs are slow
         run: go test -v -race ./...
