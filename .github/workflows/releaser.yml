@@ -1,0 +1,10 @@
+# Based on https://github.com/protocol/.github/
+
+name: Releaser
+on:
+  push:
+    paths: [ 'version.json' ]
+
+jobs:
+  releaser:
+    uses: protocol/.github/.github/workflows/releaser.yml@master
