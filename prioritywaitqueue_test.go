@@ -10,6 +10,7 @@ import (
 )
 
 type worker struct {
+	wg     *sync.WaitGroup
 	id     int
 	sleep  int
 	work   int
@@ -18,6 +19,8 @@ type worker struct {
 }
 
 func (w *worker) run() {
+	w.wg.Done()
+	w.wg.Wait()
 	time.Sleep(time.Duration(w.sleep) * time.Millisecond)
 	done := w.queue.Wait(w)
 	time.Sleep(time.Duration(w.work) * time.Millisecond)
@@ -25,8 +28,8 @@ func (w *worker) run() {
 	done()
 }
 
-func runWorker(id, sleep, work int, queue prioritywaitqueue.PriorityWaitQueue[*worker], doneCb func(int)) {
-	w := worker{id, sleep, work, queue, doneCb}
+func runWorker(wg *sync.WaitGroup, id, sleep, work int, queue prioritywaitqueue.PriorityWaitQueue[*worker], doneCb func(int)) {
+	w := worker{wg, id, sleep, work, queue, doneCb}
 	go w.run()
 }
 
@@ -36,65 +39,107 @@ var workerCmp prioritywaitqueue.ComparePriority[*worker] = func(a *worker, b *wo
 
 func TestPriorityWaitQueue(t *testing.T) {
 	tests := []struct {
-		name     string
-		sleeps   []int // how long to sleep before queueing
-		works    []int // how long the work takes
-		expected []int // the order we expect them to be executed in
+		name         string
+		sleeps       []int // how long to sleep before queueing
+		works        []int // how long the work takes
+		expected     []int // the order we expect them to be executed in
+		initialPause time.Duration
 	}{
 		{
 			// start one, block queue, then queue remaining at the same time and
 			// expect them to all be run in proper order
 			name:     "same start",
-			sleeps:   []int{00, 10, 10, 10, 10, 10, 10, 10, 10, 10},
-			works:    []int{50, 10, 10, 10, 10, 10, 10, 10, 10, 10},
+			sleeps:   []int{00, 100, 100, 100, 100, 100, 100, 100, 100, 100},
+			works:    []int{500, 100, 100, 100, 100, 100, 100, 100, 100, 100},
 			expected: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+		},
+		{
+			// similar to above, but we pause to allow all the workers to queue
+			name:         "same start, initial pause",
+			sleeps:       []int{100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
+			works:        []int{100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
+			expected:     []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+			initialPause: 10 * time.Millisecond,
 		},
 		{
 			// same as previous but with messy arrival order
 			name:     "same start, skewed",
-			sleeps:   []int{00, 10, 20, 10, 20, 10, 20, 10, 20, 10},
-			works:    []int{50, 10, 10, 10, 10, 10, 10, 10, 10, 10},
+			sleeps:   []int{00, 100, 200, 100, 200, 100, 200, 100, 200, 100},
+			works:    []int{500, 100, 100, 100, 100, 100, 100, 100, 100, 100},
 			expected: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+		},
+		{
+			// same as previous but without the initial straight-through #1
+			name:         "same start, skewed, initial pause",
+			sleeps:       []int{100, 100, 200, 100, 200, 100, 200, 100, 200, 100},
+			works:        []int{100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
+			expected:     []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+			initialPause: 10 * time.Millisecond,
 		},
 		{
 			// start one, block queue, then queue 4, run them, with the final one
 			// blocking beyond when we add 5 more and expect them all to be run in
 			// proper order
 			name:     "batched start",
-			sleeps:   []int{00, 20, 20, 20, 20, 150, 150, 150, 150, 150},
-			works:    []int{50, 10, 10, 10, 100, 10, 10, 10, 10, 10},
+			sleeps:   []int{00, 200, 200, 200, 200, 500, 500, 500, 500, 500},
+			works:    []int{250, 50, 50, 50, 500, 50, 50, 50, 50, 50},
 			expected: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+		},
+		{
+			// similar to above, but without the initial straight-through #1
+			name:         "batched start, initial pause",
+			sleeps:       []int{200, 200, 200, 200, 200, 500, 500, 500, 500, 500},
+			works:        []int{50, 50, 50, 50, 500, 50, 50, 50, 50, 50},
+			expected:     []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+			initialPause: 10 * time.Millisecond,
 		},
 		{
 			// same as previous but with different batches
 			name:     "batched start reverse",
-			sleeps:   []int{00, 150, 150, 150, 150, 150, 20, 20, 20, 20},
-			works:    []int{50, 10, 10, 10, 10, 10, 10, 10, 10, 100},
+			sleeps:   []int{00, 500, 500, 500, 500, 500, 200, 200, 200, 200},
+			works:    []int{250, 50, 50, 50, 50, 50, 50, 50, 50, 500},
 			expected: []int{0, 6, 7, 8, 9, 1, 2, 3, 4, 5},
+		},
+		{
+			// same as previous but without the initial straight-through #1
+			name:         "batched start reverse, initial pause",
+			sleeps:       []int{200, 500, 500, 500, 500, 500, 200, 200, 200, 200},
+			works:        []int{50, 50, 50, 50, 50, 50, 50, 50, 50, 500},
+			expected:     []int{0, 6, 7, 8, 9, 1, 2, 3, 4, 5},
+			initialPause: 10 * time.Millisecond,
 		},
 	}
 	for _, tc := range tests {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			// setup
-			queue := prioritywaitqueue.New(workerCmp)
+			opts := make([]prioritywaitqueue.Option[*worker], 0)
+			if tc.initialPause > 0 {
+				opts = append(opts, prioritywaitqueue.WithInitialPause[*worker](tc.initialPause))
+			}
+			queue := prioritywaitqueue.New(workerCmp, opts...)
 			out := make([]int, 0)
 			lk := sync.Mutex{}
-			wg := sync.WaitGroup{}
-			wg.Add(len(tc.sleeps))
+			doneWg := sync.WaitGroup{}
+			doneWg.Add(len(tc.sleeps))
 			doneCb := func(id int) {
 				lk.Lock()
 				defer lk.Unlock()
 				out = append(out, id)
-				wg.Done()
+				doneWg.Done()
 			}
 
 			// run
+			startWg := sync.WaitGroup{}
+			startWg.Add(len(tc.sleeps))
 			for id := range tc.sleeps {
-				runWorker(id, tc.sleeps[id], tc.works[id], queue, doneCb)
+				runWorker(&startWg, id, tc.sleeps[id], tc.works[id], queue, doneCb)
 			}
 
 			// verify
-			wg.Wait()
+			doneWg.Wait()
 			if len(out) != 10 {
 				t.Errorf("recorded %d outputs, expected 10", len(out))
 			}
