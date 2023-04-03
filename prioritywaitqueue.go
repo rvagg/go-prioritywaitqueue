@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/benbjohnson/clock"
 )
 
 // PriorityWaitQueue is a blocking queue for coordinating goroutines, providing
@@ -37,6 +39,14 @@ func WithInitialPause[T interface{}](duration time.Duration) Option[T] {
 	}
 }
 
+// WithClock sets the clock to use for the PriorityWaitQueue. This is useful
+// for testing.
+func WithClock[T interface{}](clock clock.Clock) Option[T] {
+	return func(q PriorityWaitQueue[T]) {
+		q.(*priorityWaitQueue[T]).clock = clock
+	}
+}
+
 // ComparePriority should return true if a has a higher priority, and therefore
 // should run, BEFORE b.
 type ComparePriority[T interface{}] func(a T, b T) bool
@@ -48,6 +58,7 @@ func New[T interface{}](cmp ComparePriority[T], options ...Option[T]) PriorityWa
 		cmp:     cmp,
 		cond:    sync.NewCond(&sync.Mutex{}),
 		waiters: make([]*T, 0),
+		clock:   clock.New(),
 	}
 	for _, opt := range options {
 		opt(pwq)
@@ -62,6 +73,7 @@ type priorityWaitQueue[T interface{}] struct {
 	cond             *sync.Cond
 	waiters          []*T
 	running          *T
+	clock            clock.Clock
 	initialPause     time.Duration
 	initialPauseDone bool
 	initialPauseLk   sync.Mutex
@@ -82,7 +94,7 @@ func (pwq *priorityWaitQueue[T]) Wait(waitWith T) func() {
 		pwq.cond.L.Unlock()
 		pwq.initialPauseLk.Lock()
 		if !pwq.initialPauseDone {
-			time.Sleep(pwq.initialPause)
+			pwq.clock.Sleep(pwq.initialPause)
 			pwq.initialPauseDone = true
 		}
 		pwq.initialPauseLk.Unlock()
