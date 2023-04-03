@@ -1,0 +1,11 @@
+# Based on https://github.com/protocol/.github/
+
+name: Tag Push Checker
+on:
+  push:
+    tags:
+      - v*
+
+jobs:
+  releaser:
+    uses: protocol/.github/.github/workflows/tagpush.yml@master
